@@ -9,3 +9,4 @@ class EntryStatus(str, Enum):
     SERVED = "served"
     CALLED = "called"
     SKIPPED = "skipped"
+    LEFT = "left"

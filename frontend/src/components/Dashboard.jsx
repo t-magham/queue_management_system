@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-const baseUrl = import.meta.env.VITE_API_BASE_URL;
+const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -105,7 +105,7 @@ const handleCreateQueue = async (e) => {
   const payload = {
     queue_name: newQueueName,
     description: newQueueDescription || null,
-    avg_serve_time: parseInt(newAvgServeTime),          // convert min → seconds
+    avg_serve_time: Math.round((parseFloat(newAvgServeTime) || 1) * 60), // convert min → seconds
     scheduled_open_at:  isScheduled ? scheduledOpenAt  : null,
     scheduled_close_at: isScheduled ? scheduledCloseAt : null,
   };

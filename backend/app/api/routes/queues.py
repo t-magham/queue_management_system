@@ -75,6 +75,14 @@ async def skip_current(queue_id: int, user: User = Depends(get_current_user), db
     return state
 
 
+@queue_router.post("/recall/{queue_id}")
+async def recall_current(queue_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    state = queue_services.recall_current(db, queue_id, user)
+    await manager.broadcast(queue_id, state)
+    return state
+
+
+
 # ── guest action ──────────────────────────────────────────────────────────────
 
 @queue_router.post("/join/{code}")

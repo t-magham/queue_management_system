@@ -1,5 +1,5 @@
 from typing import List
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from app.models.queue import Queue
 from datetime import datetime
 from typing import Optional
@@ -20,9 +20,7 @@ class QueueResponse(BaseModel):
     id: int
     name: str
     status: str
-
-    class Config:
-        from_attributes = True  # allows reading from SQLAlchemy objects
+    model_config = ConfigDict(from_attributes=True)
 class CreateQueueRequest(BaseModel):
     queue_name: str
     description: Optional[str] = None

@@ -1,8 +1,10 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
-const baseUrl = import.meta.env.VITE_API_BASE_URL;
-const wsBase = baseUrl.replace(/^http/, 'ws');
+const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
+const wsBase = baseUrl.startsWith('http')
+  ? baseUrl.replace(/^http/, 'ws')
+  : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}${baseUrl}`;
 
 const GuestQueuePage = () => {
   const { queue_id } = useParams();
@@ -32,7 +34,7 @@ const GuestQueuePage = () => {
       const data = JSON.parse(event.data);
       const {entries} = data;
       const myEntry = entries.find(e => e.id === myEntryId);
-      if(!myEntry && !isLeavingVoluntarily) {
+      if(!myEntry && !isLeavingVoluntarily.current) {
         alert('You have been removed from the queue by the admin.');
         navigate('/');
       }
@@ -94,7 +96,7 @@ const GuestQueuePage = () => {
   const waitingAhead = entries.filter(
     e => e.status === 'waiting' && e.join_number < (myEntry?.join_number ?? Infinity)
   ).length;
-  const estimatedWait = waitingAhead * queue.avg_serve_time;
+  const estimatedWait = Math.round((waitingAhead * queue.avg_serve_time) / 60); // seconds to minutes
   const isCalled = myEntry?.status === 'called';
 
   return (

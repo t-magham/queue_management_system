@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from "react-router-dom";
 import Input from './Input';
 
-const baseUrl = import.meta.env.VITE_API_BASE_URL;
-const siteName = import.meta.env.VITE_APP_NAME;
+const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
+const siteName = import.meta.env.VITE_APP_NAME || 'Queue System';
 
 export default function Login() {
   const [formData, setFormData] = useState({ email: '', password: '' });

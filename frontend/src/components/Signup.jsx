@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Input from './Input';
 import { Link } from 'react-router-dom';
 
-const baseUrl = import.meta.env.VITE_API_BASE_URL;
+const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
 
 export default function Signup() {
   const [formData, setFormData] = useState({ 

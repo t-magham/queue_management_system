@@ -1,8 +1,8 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 
-const baseUrl = import.meta.env.VITE_API_BASE_URL;
-const siteName = import.meta.env.VITE_APP_NAME;
+const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
+const siteName = import.meta.env.VITE_APP_NAME || 'Queue System';
 export default function Home() {
   const navigate = useNavigate();
   return (

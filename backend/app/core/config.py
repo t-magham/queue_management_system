@@ -20,6 +20,6 @@ class Settings(BaseSettings):
     def cors_origins_list(self):
         if not self.CORS_ORIGINS:
             return []
-        return [origin.split() for origin in self.CORS_ORIGINS.split(",") if origin]
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()] 
 
 settings = Settings()

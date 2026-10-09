@@ -79,8 +79,8 @@ def get_queue_state(db: Session, queue_id: int) -> dict:
         ],
         "stats": {
             "waiting_count": len(waiting),
-            # todo: since we are deleting entries after finishing, we can't have served count
             "served_count": sum(1 for e in entries if e.status == EntryStatus.SERVED),
+            "skipped_count": sum(1 for e in entries if e.status in (EntryStatus.SKIPPED, EntryStatus.LEFT)),
             "estimated_wait": len(waiting) * queue.avg_serve_time,  # seconds
         }
     }
@@ -139,10 +139,10 @@ def close_queue(db: Session, queue_id: int, user: User) -> dict:
 def call_next(db: Session, queue_id: int, user: User) -> dict:
     queue = _get_queue_or_404(db, queue_id)
     _assert_admin(queue, user)
-    if queue.status != QueueStatus.OPEN:
-        raise HTTPException(status_code=400, detail="Queue must be open to call next")
+    if queue.status not in (QueueStatus.OPEN, QueueStatus.CLOSED):
+        raise HTTPException(status_code=400, detail="Queue is not active")
 
-    # set currently CALLED entry to SERVED
+    # set currently CALLED entry to SERVED and calculate duration
     current_called = (
         db.query(QueueEntry)
         .filter(QueueEntry.queue_id == queue_id, QueueEntry.status == EntryStatus.CALLED)
@@ -150,6 +150,18 @@ def call_next(db: Session, queue_id: int, user: User) -> dict:
     )
     if current_called:
         current_called.status = EntryStatus.SERVED
+        current_called.served_at = datetime.now(timezone.utc)
+        if current_called.called_at:
+            called_at = current_called.called_at
+            if called_at.tzinfo is None:
+                called_at = called_at.replace(tzinfo=timezone.utc)
+            served_at = current_called.served_at
+            if served_at.tzinfo is None:
+                served_at = served_at.replace(tzinfo=timezone.utc)
+            duration = int((served_at - called_at).total_seconds())
+            if duration > 0:
+                # Dynamic rolling average: blend 70% current baseline + 30% observed duration
+                queue.avg_serve_time = max(10, int(0.7 * queue.avg_serve_time + 0.3 * duration))
 
     next_entry = (
         db.query(QueueEntry)
@@ -159,10 +171,26 @@ def call_next(db: Session, queue_id: int, user: User) -> dict:
     )
     if next_entry is None:
         db.commit()
+        if current_called:
+            return get_queue_state(db, queue_id)
         raise HTTPException(status_code=404, detail="No waiting entries")
 
     next_entry.status = EntryStatus.CALLED
     next_entry.called_at = datetime.now(timezone.utc)
+    db.commit()
+    return get_queue_state(db, queue_id)
+
+def recall_current(db: Session, queue_id: int, user: User) -> dict:
+    queue = _get_queue_or_404(db, queue_id)
+    _assert_admin(queue, user)
+    current_called = (
+        db.query(QueueEntry)
+        .filter(QueueEntry.queue_id == queue_id, QueueEntry.status == EntryStatus.CALLED)
+        .first()
+    )
+    if current_called is None:
+        raise HTTPException(status_code=404, detail="No entry is currently called")
+    current_called.called_at = datetime.now(timezone.utc)
     db.commit()
     return get_queue_state(db, queue_id)
 
@@ -178,8 +206,9 @@ def skip_current(db: Session, queue_id: int, user: User) -> dict:
     if current_called is None:
         raise HTTPException(status_code=404, detail="No entry is currently called")
 
-    # hard delete instead of marking skipped
-    db.delete(current_called)
+    # soft update status instead of deleting
+    current_called.status = EntryStatus.SKIPPED
+    current_called.served_at = datetime.now(timezone.utc)
     db.commit()
     return get_queue_state(db, queue_id)
 
@@ -227,7 +256,8 @@ def leave_queue(db: Session, entry_id: int) -> dict:
     if entry is None:
         raise HTTPException(status_code=404, detail="Entry not found")
     queue_id = entry.queue_id
-    db.delete(entry)
+    entry.status = EntryStatus.LEFT
+    entry.served_at = datetime.now(timezone.utc)
     db.commit()
     return get_queue_state(db, queue_id)
 
@@ -236,7 +266,8 @@ def delete_queue_entry(db: Session, entry_id: int) -> dict:
     entry = db.query(QueueEntry).filter(QueueEntry.id == entry_id).first()
     if entry:
         queue_id = entry.queue_id
-        db.delete(entry)
+        entry.status = EntryStatus.SKIPPED
+        entry.served_at = datetime.now(timezone.utc)
         db.commit()
-    state = get_queue_state(db, queue_id)
+    state = get_queue_state(db, queue_id) if queue_id else {}
     return {"state": state, "queue_id": queue_id}

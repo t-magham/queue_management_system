@@ -1,8 +1,10 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
-const baseUrl = import.meta.env.VITE_API_BASE_URL;
-const wsBase = baseUrl.replace(/^http/, 'ws');
+const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
+const wsBase = baseUrl.startsWith('http')
+  ? baseUrl.replace(/^http/, 'ws')
+  : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}${baseUrl}`;
 
 const AdminQueuePage = () => {
   const { id } = useParams();
@@ -92,7 +94,7 @@ const AdminQueuePage = () => {
           {[
             { label: 'Waiting', value: stats.waiting_count },
             { label: 'Served today', value: stats.served_count },
-            { label: 'Est. wait', value: `${stats.estimated_wait * stats.waiting_count} min` },
+            { label: 'Est. wait', value: `${Math.round(stats.estimated_wait / 60)} min` },
           ].map(({ label, value }) => (
             <div key={label} className="bg-white rounded-lg shadow p-4 text-center">
               <div className="text-2xl font-bold text-gray-800">{value}</div>
@@ -116,9 +118,14 @@ const AdminQueuePage = () => {
               Close
             </button>
             <button onClick={() => adminAction('call-next')}
-              disabled={queue.status !== 'open'}
+              disabled={stats.waiting_count === 0 && !entries.some(e => e.status === 'called')}
               className="bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-medium py-2 px-4 rounded transition-colors">
               Call Next
+            </button>
+            <button onClick={() => adminAction('recall')}
+              disabled={!entries.some(e => e.status === 'called')}
+              className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white font-medium py-2 px-4 rounded transition-colors">
+              Recall
             </button>
             <button onClick={() => adminAction('skip')}
               disabled={!entries.some(e => e.status === 'called')}
@@ -142,7 +149,7 @@ const AdminQueuePage = () => {
                 const ahead = entries.filter(
                   e => e.status === 'waiting' && e.join_number < entry.join_number
                 ).length;
-                const estCallAfter = ahead * queue.avg_serve_time ; // minutes
+                const estCallAfter = Math.round((ahead * queue.avg_serve_time) / 60); // seconds to minutes
 
                 return (
                   <li key={entry.id}

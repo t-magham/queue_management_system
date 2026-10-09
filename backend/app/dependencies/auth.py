@@ -10,7 +10,7 @@ from app.models import User
 from app.db.deps import get_db
 
 # This automatically extracts the token from "Authorization: Bearer <token>"
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
 
 # user get info called after login claim
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
@@ -61,12 +61,16 @@ def verify_admin_token(token: str):
 # guest verification part
 
 def create_guest_token(entry_id: int, queue_id: int, join_number: int) -> str:
-    return create_access_token({
+    expire = datetime.now(timezone.utc) + timedelta(hours=24)
+    to_encode = {
         "sub": "guest",
         "entry_id": entry_id,
         "queue_id": queue_id,
         "join_number": join_number,
-    })
+        "exp": expire,
+    }
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
 def get_expired_guest_entry(token: str):
     payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM], options={"verify_exp": False})
     entry_id = payload.get("entry_id")
