@@ -16,8 +16,9 @@ const GuestQueuePage = () => {
   const isLeavingVoluntarily = useRef(false); // new flag
 
 
-  const guestToken = localStorage.getItem('guest_token');
-  const myEntryId = parseInt(localStorage.getItem('guest_entry_id'));
+  // read once: the effect clears these on expiry and must not re-run (and redirect) when it does
+  const [guestToken] = useState(() => localStorage.getItem('guest_token'));
+  const [myEntryId] = useState(() => parseInt(localStorage.getItem('guest_entry_id')));
 
   useEffect(() => {
     if (!guestToken) { navigate('/join'); return; }
@@ -67,7 +68,7 @@ const GuestQueuePage = () => {
     ws.onerror = (e) => console.error('WS error', e);
 
     return () => ws.close();
-  }, [queue_id, navigate]);
+  }, [queue_id, navigate, guestToken, myEntryId]);
 
   const handleLeave = async () => {
     if (!confirm('Leave the queue?')) return;

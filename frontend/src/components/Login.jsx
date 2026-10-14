@@ -60,7 +60,7 @@ export default function Login() {
           } else {
             console.log("no token")
           }
-        } catch (parseError) {
+        } catch {
           throw new Error("failed parsing response");  
         }
       } else {

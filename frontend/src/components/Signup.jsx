@@ -60,7 +60,7 @@ export default function Signup() {
         try {
           const errorData = await res.json();
           errorMessage = errorData?.detail || errorMessage; 
-        } catch (parseError) {
+        } catch {
           if (res.status === 409) errorMessage = "Email already exists.";
         }
 
