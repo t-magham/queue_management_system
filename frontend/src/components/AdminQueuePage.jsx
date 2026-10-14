@@ -11,6 +11,7 @@ const AdminQueuePage = () => {
   const navigate = useNavigate();
   const [queueState, setQueueState] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const wsRef = useRef(null);
 
   useEffect(() => {
@@ -21,14 +22,22 @@ const AdminQueuePage = () => {
     fetch(`${baseUrl}/queues/state/${id}`, {
       headers: { 'Authorization': `Bearer ${token}` }
     })
-      .then(r => r.json())
-      .then(data => { setQueueState(data); setLoading(false); })
-      .catch(e => console.error('Failed to load queue state', e));
+      .then(async r => {
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.detail || 'Failed to load queue');
+        setQueueState(data);
+      })
+      .catch(e => { console.error('Failed to load queue state', e); setError(e.message); })
+      .finally(() => setLoading(false));
 
     // WS — admin passes auth_token
     const ws = new WebSocket(`${wsBase}/ws/queue/${id}?token=${token}`);
     wsRef.current = ws;
     ws.onmessage = (event) => setQueueState(JSON.parse(event.data));
+    ws.onclose = (event) => {
+      // 4003: token isn't valid for this queue (not the owner, or expired login)
+      if (event.code === 4003) setError('You do not have access to this queue.');
+    };
     ws.onerror = (e) => console.error('WS error', e);
 
     return () => ws.close();
@@ -51,8 +60,12 @@ const AdminQueuePage = () => {
   };
   const handleDeleteEntry = async (entryId) => {
     try {
-      const res = await fetch(`${baseUrl}/queues/delete-entry/${entryId}`, { method: 'DELETE' });
-      // refresh queue state however you currently do it
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch(`${baseUrl}/queues/delete-entry/${entryId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      // new state arrives over the websocket broadcast
       if (!res.ok) {
         const err = await res.json();
         alert(err.detail || 'Action failed');
@@ -65,6 +78,18 @@ const AdminQueuePage = () => {
   if (loading) return (
     <div className="flex items-center justify-center h-screen bg-gray-50">
       <div className="text-lg font-semibold text-gray-600">Loading queue...</div>
+    </div>
+  );
+
+  if (error || !queueState) return (
+    <div className="flex items-center justify-center h-screen bg-gray-50">
+      <div className="bg-white rounded-lg shadow p-8 text-center max-w-sm">
+        <p className="text-gray-800 font-semibold mb-4">{error || 'Failed to load queue'}</p>
+        <button onClick={() => navigate('/dashboard')}
+          className="bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700">
+          Back to Dashboard
+        </button>
+      </div>
     </div>
   );
 
@@ -180,12 +205,14 @@ const AdminQueuePage = () => {
                         {entry.status.charAt(0).toUpperCase() + entry.status.slice(1)}
                       </span>
 
+                      {(entry.status === 'waiting' || entry.status === 'called') && (
                         <button
                           onClick={() => handleDeleteEntry(entry.id)}
                           className="text-red-500 hover:text-red-700 hover:bg-red-50 rounded p-1 transition-colors"
                           title="Remove from queue">
                           ✕
                         </button>
+                      )}
                     </div>
                   </li>
                 );

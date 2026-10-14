@@ -17,7 +17,6 @@ def read_users_me(cur_user: User = Depends(get_current_user)):
 
 @auth_router.post("/login")
 def user_login_endpoint(payload: auth_schemas.LoginRequest, db: Session = Depends(get_db)):
-    print(payload.email)
     return auth_services.user_login(db, payload.email, payload.password)
 @auth_router.post("/signup")
 def user_signup_endpoint(payload: auth_schemas.SignupRequest, db: Session = Depends(get_db)):

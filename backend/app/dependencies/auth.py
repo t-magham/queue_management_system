@@ -17,7 +17,6 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     """
     Validates token and fetches the user from DB.
     """
-    print("get_current_user")
     payload = verify_admin_token(token)
     email = payload.get("sub")
 
@@ -28,12 +27,11 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
         )
-    print("get_current_user finished")
     return user
 
 def create_access_token(data: dict):
     to_encode = data.copy()
-    # token to expire after 24 hours
+    # token to expire after 3 hours
     expire = datetime.now(timezone.utc) + timedelta(hours=3)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
@@ -73,8 +71,9 @@ def create_guest_token(entry_id: int, queue_id: int, join_number: int) -> str:
 
 def get_expired_guest_entry(token: str):
     payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM], options={"verify_exp": False})
-    entry_id = payload.get("entry_id")
-    return entry_id
+    if payload.get("sub") != "guest":
+        return None
+    return payload.get("entry_id")
 
 def verify_guest_token(token: str) -> dict:
     try:
@@ -86,5 +85,9 @@ def verify_guest_token(token: str) -> dict:
         raise  # let it bubble up — caller handles cleanup
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Guest token invalid")
+
 def get_current_guest(token: str = Depends(oauth2_scheme)) -> dict:
-    return verify_guest_token(token)
+    try:
+        return verify_guest_token(token)
+    except ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Guest token expired")

@@ -1,5 +1,5 @@
 from typing import List
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from app.models.queue import Queue
 from datetime import datetime
 from typing import Optional
@@ -14,7 +14,7 @@ class DeleteQueueRequest(BaseModel):
     queue_id: int
 
 class JoinQueueRequest(BaseModel):
-    display_name: str
+    display_name: str = Field(min_length=1, max_length=50)  # matches the DB column
 
 class QueueResponse(BaseModel):
     id: int
@@ -22,9 +22,9 @@ class QueueResponse(BaseModel):
     status: str
     model_config = ConfigDict(from_attributes=True)
 class CreateQueueRequest(BaseModel):
-    queue_name: str
-    description: Optional[str] = None
-    avg_serve_time: int                              # seconds (frontend sends minutes * 60)
+    queue_name: str = Field(min_length=1, max_length=255)
+    description: Optional[str] = Field(default=None, max_length=500)
+    avg_serve_time: int = Field(gt=0)                             # seconds (frontend sends minutes * 60)
     scheduled_open_at:  Optional[datetime] = None
     scheduled_close_at: Optional[datetime] = None
 

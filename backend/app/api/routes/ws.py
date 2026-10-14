@@ -3,7 +3,10 @@ import logging
 
 from jwt.exceptions import ExpiredSignatureError
 
+from fastapi.concurrency import run_in_threadpool
+
 from app.db.session import SessionLocal
+from app.models import Queue, User
 from app.dependencies.auth import verify_guest_token, verify_admin_token, get_expired_guest_entry
 from app.services.queue_services import delete_queue_entry
 
@@ -16,11 +19,9 @@ class ConnectionManager:
         # { queue_id: [websocket1, websocket2, ...] }
         self.rooms: dict[int, list[WebSocket]] = {}
 
-    async def connect(self, queue_id: int, websocket: WebSocket):
-        await websocket.accept()
-        if queue_id not in self.rooms:
-            self.rooms[queue_id] = []
-        self.rooms[queue_id].append(websocket)
+    def connect(self, queue_id: int, websocket: WebSocket):
+        # websocket must already be accepted
+        self.rooms.setdefault(queue_id, []).append(websocket)
         logger.info(f"WS connected: queue_id={queue_id}, total in room={len(self.rooms[queue_id])}")
 
     def disconnect(self, queue_id: int, websocket: WebSocket):
@@ -36,7 +37,8 @@ class ConnectionManager:
             logger.info(f"broadcast called but no connections in room {queue_id}")
             return
         disconnected = []
-        for websocket in self.rooms[queue_id]:
+        # iterate a copy: connections may join/leave while we await sends
+        for websocket in list(self.rooms[queue_id]):
             try:
                 await websocket.send_json(message)
             except Exception as e:
@@ -60,37 +62,47 @@ async def websocket_endpoint(
     queue_id: int,
     token: str = Query(...),
 ):
+    # Accept first: closing before accept turns into an HTTP 403 handshake failure,
+    # and the browser then sees code 1006 instead of our custom close codes.
+    await websocket.accept()
     db = SessionLocal()
-    logger.info(f"request come here: {token}")
     try:
         try:
-            verify_guest_token(token)
-            logger.info(f"after verify guest token")
+            guest = verify_guest_token(token)
+            if guest.get("queue_id") != queue_id:
+                await websocket.close(code=4003)
+                return
         except ExpiredSignatureError:
-            logger.info(f"expired guest token")
-            # valid guest token but expired — delete entry and reject
+            # signature valid but expired — free the guest's spot and reject
             entry_id = get_expired_guest_entry(token)
-            state = delete_queue_entry(db, entry_id)
+            res = await run_in_threadpool(delete_queue_entry, db, entry_id) if entry_id else None
             await websocket.close(code=4001)
-            if state:
-                await manager.broadcast(queue_id, state)
+            if res and res["state"]:
+                await manager.broadcast(res["queue_id"], res["state"])
             return
         except HTTPException as e:
             logger.info(f"Not a guest token, trying admin. Reason: {e.detail}")
-            try:
-                verify_admin_token(token)
-                logger.info("Admin token verified successfully")
-            except Exception as ex:
-                logger.error(f"Admin token also failed: {ex}")
-                await websocket.close(code=403)
+            if not await run_in_threadpool(_is_queue_admin, db, token, queue_id):
+                await websocket.close(code=4003)
                 return
-        logger.info(f"request come out of exceptions")
-        await manager.connect(queue_id, websocket)
+
+        manager.connect(queue_id, websocket)
         try:
             while True:
                 await websocket.receive_text()
         except WebSocketDisconnect:
+            pass
+        finally:
             manager.disconnect(queue_id, websocket)
     finally:
         db.close()
 
+
+def _is_queue_admin(db, token: str, queue_id: int) -> bool:
+    try:
+        payload = verify_admin_token(token)
+    except HTTPException:
+        return False
+    user = db.query(User).filter(User.email == payload["sub"]).first()
+    queue = db.query(Queue).filter(Queue.id == queue_id).first()
+    return user is not None and queue is not None and queue.admin_id == user.id

@@ -23,24 +23,39 @@ const GuestQueuePage = () => {
     if (!guestToken) { navigate('/join'); return; }
 
     fetch(`${baseUrl}/queues/state/${queue_id}`)
-      .then(r => r.json())
-      .then(data => { setQueueState(data); setLoading(false); })
-      .catch(e => console.error('Failed to load state', e));
+      .then(async r => {
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.detail || 'Failed to load queue');
+        setQueueState(data);
+      })
+      .catch(e => console.error('Failed to load state', e))
+      .finally(() => setLoading(false));
 
     const ws = new WebSocket(`${wsBase}/ws/queue/${queue_id}?token=${guestToken}`);
     wsRef.current = ws;
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      const {entries} = data;
-      const myEntry = entries.find(e => e.id === myEntryId);
-      if(!myEntry && !isLeavingVoluntarily.current) {
+      if (!data.entries) return;
+      const myEntry = data.entries.find(e => e.id === myEntryId);
+      // entries are soft-retained, so removal shows up as a status change, not a missing row
+      const removed = !myEntry || myEntry.status === 'skipped';
+      if (removed && !isLeavingVoluntarily.current) {
+        isLeavingVoluntarily.current = true; // only alert once
+        localStorage.removeItem('guest_token');
+        localStorage.removeItem('guest_entry_id');
         alert('You have been removed from the queue by the admin.');
         navigate('/');
+        return;
       }
-      setQueueState(JSON.parse(event.data));
+      setQueueState(data);
     }
     ws.onclose = (event) => {
+      if (event.code === 4003) {
+        // token belongs to a different queue
+        navigate('/join');
+        return;
+      }
       if (event.code === 4001) {
         // backend rejected — token expired
         localStorage.removeItem('guest_token');
@@ -89,6 +104,12 @@ const GuestQueuePage = () => {
       </div>
     </div>
   );
+  if (!queueState) return (
+    <div className="flex items-center justify-center h-screen bg-gray-50">
+      <div className="text-lg font-semibold text-gray-600">Could not load the queue.</div>
+    </div>
+  );
+
   const { queue, entries, stats } = queueState;
   const myEntry = entries.find(e => e.id === myEntryId);
 
