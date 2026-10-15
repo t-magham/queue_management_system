@@ -6,9 +6,9 @@ def test_websocket_rejects_invalid_token(client, admin_headers):
     queue_id = create_res.json()["id"]
 
     with pytest.raises(WebSocketDisconnect) as exc:
-        with client.websocket_connect(f"/ws/queue/{queue_id}?token=invalid.jwt.token"):
-            pass
-    assert exc.value.code == 403
+        with client.websocket_connect(f"/ws/queue/{queue_id}?token=invalid.jwt.token") as ws:
+            ws.receive_text()
+    assert exc.value.code == 4003
 
 def test_websocket_connect_and_broadcast_with_guest_and_admin(client, admin_headers):
     create_res = client.post("/queues/create", json={"queue_name": "Broadcast Test", "avg_serve_time": 60}, headers=admin_headers)

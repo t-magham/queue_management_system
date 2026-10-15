@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# a new push to the same branch/PR cancels the previous run
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (tests on Postgres)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        # same version as docker-compose.yml
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: queue_user
+          POSTGRES_PASSWORD: queue_pass
+          POSTGRES_DB: queue_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U queue_user -d queue_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://queue_user:queue_pass@localhost:5432/queue_db
+      TEST_DATABASE_URL: postgresql://queue_user:queue_pass@localhost:5432/queue_db
+      # throwaway values for CI only, not the production secret
+      SECRET_KEY: 2a3a08476e50e98cfad6780ae0f7a4ab3f1bed3112be8fdcf8f6824b22c8a2ce
+      ALGORITHM: HS256
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Apply migrations
+        run: alembic upgrade head
+
+      - name: Check models match migrations
+        run: alembic check
+
+      - name: Run tests
+        run: python -m pytest -q
+
+  frontend:
+    name: Frontend (lint and build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+  docker:
+    name: Docker (build and smoke test)
+    runs-on: ubuntu-latest
+    env:
+      POSTGRES_PASSWORD: ci_postgres_password
+      SECRET_KEY: 2a3a08476e50e98cfad6780ae0f7a4ab3f1bed3112be8fdcf8f6824b22c8a2ce
+      ALGORITHM: HS256
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build images
+        run: docker compose build
+
+      - name: Start stack
+        run: docker compose up -d
+
+      # nginx -> backend -> postgres; the backend runs migrations on start
+      - name: Health check through nginx
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost/api/health; then
+              echo
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Stack did not become healthy"
+          exit 1
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Stop stack
+        if: always()
+        run: docker compose down -v

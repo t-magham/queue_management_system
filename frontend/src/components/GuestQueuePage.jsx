@@ -16,31 +16,47 @@ const GuestQueuePage = () => {
   const isLeavingVoluntarily = useRef(false); // new flag
 
 
-  const guestToken = localStorage.getItem('guest_token');
-  const myEntryId = parseInt(localStorage.getItem('guest_entry_id'));
+  // read once: the effect clears these on expiry and must not re-run (and redirect) when it does
+  const [guestToken] = useState(() => localStorage.getItem('guest_token'));
+  const [myEntryId] = useState(() => parseInt(localStorage.getItem('guest_entry_id')));
 
   useEffect(() => {
     if (!guestToken) { navigate('/join'); return; }
 
     fetch(`${baseUrl}/queues/state/${queue_id}`)
-      .then(r => r.json())
-      .then(data => { setQueueState(data); setLoading(false); })
-      .catch(e => console.error('Failed to load state', e));
+      .then(async r => {
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.detail || 'Failed to load queue');
+        setQueueState(data);
+      })
+      .catch(e => console.error('Failed to load state', e))
+      .finally(() => setLoading(false));
 
     const ws = new WebSocket(`${wsBase}/ws/queue/${queue_id}?token=${guestToken}`);
     wsRef.current = ws;
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      const {entries} = data;
-      const myEntry = entries.find(e => e.id === myEntryId);
-      if(!myEntry && !isLeavingVoluntarily.current) {
+      if (!data.entries) return;
+      const myEntry = data.entries.find(e => e.id === myEntryId);
+      // entries are soft-retained, so removal shows up as a status change, not a missing row
+      const removed = !myEntry || myEntry.status === 'skipped';
+      if (removed && !isLeavingVoluntarily.current) {
+        isLeavingVoluntarily.current = true; // only alert once
+        localStorage.removeItem('guest_token');
+        localStorage.removeItem('guest_entry_id');
         alert('You have been removed from the queue by the admin.');
         navigate('/');
+        return;
       }
-      setQueueState(JSON.parse(event.data));
+      setQueueState(data);
     }
     ws.onclose = (event) => {
+      if (event.code === 4003) {
+        // token belongs to a different queue
+        navigate('/join');
+        return;
+      }
       if (event.code === 4001) {
         // backend rejected — token expired
         localStorage.removeItem('guest_token');
@@ -52,7 +68,7 @@ const GuestQueuePage = () => {
     ws.onerror = (e) => console.error('WS error', e);
 
     return () => ws.close();
-  }, [queue_id, navigate]);
+  }, [queue_id, navigate, guestToken, myEntryId]);
 
   const handleLeave = async () => {
     if (!confirm('Leave the queue?')) return;
@@ -89,6 +105,12 @@ const GuestQueuePage = () => {
       </div>
     </div>
   );
+  if (!queueState) return (
+    <div className="flex items-center justify-center h-screen bg-gray-50">
+      <div className="text-lg font-semibold text-gray-600">Could not load the queue.</div>
+    </div>
+  );
+
   const { queue, entries, stats } = queueState;
   const myEntry = entries.find(e => e.id === myEntryId);
 

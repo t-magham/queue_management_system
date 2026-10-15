@@ -22,7 +22,6 @@ def generate_unique_code(db: Session, length: int = 6) -> str:
 
 def get_user_queues(user: User, db: Session):
     queues = db.query(Queue).filter(Queue.admin_id == user.id).all()
-    print("queues")
     return { "status": 200,
              "queues": [
                 {"id": q.id, "name": q.name, "status": q.status}
@@ -45,6 +44,17 @@ def _get_queue_or_404(db: Session, queue_id: int) -> Queue:
 def _assert_admin(queue: Queue, user: User):
     if queue.admin_id != user.id:
         raise HTTPException(status_code=403, detail="Not your queue")
+
+def get_queue(db: Session, queue_id: int) -> dict:
+    queue = _get_queue_or_404(db, queue_id)
+    return {
+        "id": queue.id,
+        "name": queue.name,
+        "code": queue.code,
+        "description": queue.description,
+        "status": queue.status,
+        "avg_serve_time": queue.avg_serve_time,
+    }
 
 # ── state snapshot (what gets broadcast over WS) ──────────────────────────────
 
@@ -215,7 +225,8 @@ def skip_current(db: Session, queue_id: int, user: User) -> dict:
 # ── guest action ──────────────────────────────────────────────────────────────
 
 def join_queue(db: Session, code: str, display_name: str) -> dict:
-    queue = db.query(Queue).filter(Queue.code == code).first()
+    # lock the queue row so concurrent joins can't read the same last join_number
+    queue = db.query(Queue).filter(Queue.code == code).with_for_update().first()
     if queue is None:
         raise HTTPException(status_code=404, detail="Queue not found")
     if queue.status != QueueStatus.OPEN:
@@ -256,18 +267,26 @@ def leave_queue(db: Session, entry_id: int) -> dict:
     if entry is None:
         raise HTTPException(status_code=404, detail="Entry not found")
     queue_id = entry.queue_id
-    entry.status = EntryStatus.LEFT
-    entry.served_at = datetime.now(timezone.utc)
-    db.commit()
+    if entry.status in (EntryStatus.WAITING, EntryStatus.CALLED):
+        entry.status = EntryStatus.LEFT
+        entry.served_at = datetime.now(timezone.utc)
+        db.commit()
     return get_queue_state(db, queue_id)
 
-def delete_queue_entry(db: Session, entry_id: int) -> dict:
-    queue_id = 0
+def delete_queue_entry(db: Session, entry_id: int, user: User | None = None) -> dict:
+    """Mark an active entry as SKIPPED. With a user, only the queue's admin may do it;
+    without one (expired guest token cleanup) a missing entry is a no-op."""
     entry = db.query(QueueEntry).filter(QueueEntry.id == entry_id).first()
-    if entry:
-        queue_id = entry.queue_id
+    if entry is None:
+        if user is not None:
+            raise HTTPException(status_code=404, detail="Entry not found")
+        return {"state": {}, "queue_id": 0}
+    queue_id = entry.queue_id
+    if user is not None:
+        _assert_admin(entry.queue, user)
+    # served/left/skipped entries are history; don't rewrite them
+    if entry.status in (EntryStatus.WAITING, EntryStatus.CALLED):
         entry.status = EntryStatus.SKIPPED
         entry.served_at = datetime.now(timezone.utc)
         db.commit()
-    state = get_queue_state(db, queue_id) if queue_id else {}
-    return {"state": state, "queue_id": queue_id}
+    return {"state": get_queue_state(db, queue_id), "queue_id": queue_id}
