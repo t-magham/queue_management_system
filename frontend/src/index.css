@@ -1,4 +1,249 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap');
 @import "tailwindcss";
-/* Optional: Import a clean sans-serif font like Inter from Google Fonts */
 
+/* Design tokens: warm paper + ink, one signal accent (the "now serving" lamp). */
+@theme {
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-paper: #f5f3ee;
+  --color-paper-2: #ece9e1;
+  --color-card: #fbfaf7;
+  --color-line: #dedad0;
+  --color-line-strong: #c9c4b7;
+  --color-ink: #1a1915;
+  --color-ink-2: #45423a;
+  --color-mute: #7a766b;
+  --color-signal: #c2410c;
+  --color-signal-soft: #f6e3d8;
+  --color-go: #3f7a4f;
+  --color-go-soft: #e1ecdf;
+  --color-warn: #a16207;
+  --color-warn-soft: #f3e9cf;
+  --color-stop: #a8322a;
+  --color-stop-soft: #f4dfdb;
+
+  --shadow-lift: 0 1px 0 rgb(26 25 21 / 0.04), 0 8px 24px -12px rgb(60 45 20 / 0.18);
+  --shadow-pop: 0 1px 0 rgb(26 25 21 / 0.05), 0 18px 40px -18px rgb(60 45 20 / 0.32);
+
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --animate-rise: rise 420ms var(--ease-out-soft) both;
+  --animate-blink: blink 1.6s ease-in-out infinite;
+  --animate-shimmer: shimmer 1.4s linear infinite;
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+  @keyframes shimmer {
+    from { background-position: -200% 0; }
+    to { background-position: 200% 0; }
+  }
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    scroll-behavior: smooth;
+  }
+  body {
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-feature-settings: "ss01", "cv11";
+  }
+  /* fine paper grain so large surfaces don't look sterile */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.35;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.35 0 0 0 0 0.3 0 0 0 0 0.2 0 0 0 0.09 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  #root {
+    position: relative;
+    z-index: 1;
+  }
+  h1, h2, h3 {
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-signal);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: var(--color-signal-soft);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 2.75rem;
+    padding: 0 1.125rem;
+    border-radius: 0.625rem;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    letter-spacing: -0.005em;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 200ms, color 200ms, border-color 200ms, transform 120ms var(--ease-out-soft), box-shadow 200ms;
+  }
+  .btn:active:not(:disabled) {
+    transform: translateY(1px) scale(0.985);
+  }
+  .btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .btn-primary {
+    background: var(--color-ink);
+    color: var(--color-paper);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12), 0 1px 2px rgb(26 25 21 / 0.2);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: #000;
+  }
+  .btn-signal {
+    background: var(--color-signal);
+    color: #fff;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.18), 0 6px 16px -8px rgb(194 65 12 / 0.7);
+  }
+  .btn-signal:hover:not(:disabled) {
+    background: #a9370a;
+  }
+  .btn-quiet {
+    background: var(--color-card);
+    color: var(--color-ink);
+    border: 1px solid var(--color-line);
+  }
+  .btn-quiet:hover:not(:disabled) {
+    border-color: var(--color-line-strong);
+    background: #fff;
+  }
+  .btn-danger {
+    background: transparent;
+    color: var(--color-stop);
+    border: 1px solid transparent;
+  }
+  .btn-danger:hover:not(:disabled) {
+    background: var(--color-stop-soft);
+  }
+  .btn-sm {
+    min-height: 2.25rem;
+    padding: 0 0.75rem;
+    font-size: 0.875rem;
+    border-radius: 0.5rem;
+  }
+
+  .field {
+    width: 100%;
+    min-height: 2.75rem;
+    padding: 0.625rem 0.875rem;
+    border-radius: 0.625rem;
+    border: 1px solid var(--color-line);
+    background: var(--color-card);
+    font-size: 0.9375rem;
+    color: var(--color-ink);
+    transition: border-color 200ms, box-shadow 200ms, background-color 200ms;
+  }
+  .field::placeholder {
+    color: #a9a497;
+  }
+  .field:hover {
+    border-color: var(--color-line-strong);
+  }
+  .field:focus {
+    outline: none;
+    background: #fff;
+    border-color: var(--color-ink);
+    box-shadow: 0 0 0 3px rgb(26 25 21 / 0.08);
+  }
+  .field[aria-invalid="true"] {
+    border-color: var(--color-stop);
+    box-shadow: 0 0 0 3px rgb(168 50 42 / 0.1);
+  }
+
+  .label {
+    display: block;
+    margin-bottom: 0.375rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--color-ink-2);
+  }
+
+  .panel {
+    background: var(--color-card);
+    border: 1px solid var(--color-line);
+    border-radius: 1.125rem;
+    box-shadow: var(--shadow-lift);
+  }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+  }
+
+  .skeleton {
+    border-radius: 0.5rem;
+    background: linear-gradient(90deg, var(--color-paper-2) 25%, #f3f0e9 50%, var(--color-paper-2) 75%);
+    background-size: 200% 100%;
+    animation: var(--animate-shimmer);
+  }
+
+  /* ticket stub: perforated notch on both sides */
+  .ticket {
+    position: relative;
+    background: var(--color-card);
+    border: 1px solid var(--color-line);
+    border-radius: 1.25rem;
+    box-shadow: var(--shadow-pop);
+  }
+  .ticket-perf {
+    position: relative;
+    border-top: 1.5px dashed var(--color-line-strong);
+  }
+  .ticket-perf::before,
+  .ticket-perf::after {
+    content: "";
+    position: absolute;
+    top: -0.75rem;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 9999px;
+    background: var(--color-paper);
+    border: 1px solid var(--color-line);
+  }
+  .ticket-perf::before {
+    left: -0.8rem;
+    clip-path: inset(0 0 0 50%);
+  }
+  .ticket-perf::after {
+    right: -0.8rem;
+    clip-path: inset(0 50% 0 0);
+  }
+}

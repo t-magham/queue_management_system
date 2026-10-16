@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { AppHeader, BackLink, Notice, Spinner } from './ui.jsx';
 
 const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
 
@@ -10,8 +11,9 @@ const JoinPage = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleJoin = async () => {
-    if (!displayName.trim()) { setError('Please enter your name'); return; }
+  const handleJoin = async (e) => {
+    e.preventDefault();
+    if (!displayName.trim()) { setError('Enter a name so staff can call you.'); return; }
     setLoading(true);
     setError('');
     try {
@@ -27,41 +29,49 @@ const JoinPage = () => {
         localStorage.setItem('guest_entry_id', data.entry_id);
         navigate(`/guest/${data.queue_id}`);
       } else {
-        const err = await res.json();
-        setError(err.detail || 'Failed to join queue');
+        const err = await res.json().catch(() => ({}));
+        setError(err.detail || 'Couldn’t join this queue.');
       }
     } catch (e) {
       console.error('Join failed', e);
-      setError('Network error, please try again');
+      setError('Couldn’t reach the server. Check your connection and try again.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-100">
-      <div className="bg-white rounded-lg shadow p-8 w-full max-w-md">
-        <h1 className="text-2xl font-bold text-gray-800 mb-2">Almost there!</h1>
-        <p className="text-sm text-gray-500 mb-6">Queue code: <strong>{code}</strong></p>
+    <>
+      <AppHeader />
+      <main className="mx-auto max-w-md px-5 pb-24 pt-12 sm:pt-20">
+        <BackLink to="/join">Change code</BackLink>
+        <div className="mt-8 animate-rise">
+          <p className="eyebrow">Step 2 of 2 · code <span className="text-ink">{code}</span></p>
+          <h1 className="mt-3 text-4xl font-semibold tracking-[-0.03em]">What should we call you?</h1>
+          <p className="mt-3 text-mute">Staff and others in line will see this name on the board.</p>
 
-        <label className="block text-sm font-medium text-gray-700 mb-1">Your name</label>
-        <input
-          type="text"
-          value={displayName}
-          onChange={(e) => setDisplayName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
-          placeholder="e.g. John"
-          className="w-full border border-gray-300 rounded-md p-2 mb-4"
-        />
-
-        {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
-
-        <button onClick={handleJoin} disabled={loading}
-          className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-medium py-2 px-4 rounded transition-colors">
-          {loading ? 'Joining...' : 'Join Queue'}
-        </button>
-      </div>
-    </div>
+          <form onSubmit={handleJoin} className="mt-10 space-y-5" noValidate>
+            <div>
+              <label htmlFor="display-name" className="label">Your name</label>
+              <input
+                id="display-name"
+                autoFocus
+                autoComplete="given-name"
+                maxLength={50}
+                value={displayName}
+                onChange={(e) => { setDisplayName(e.target.value); setError(''); }}
+                placeholder="e.g. Priya S."
+                className="field"
+              />
+            </div>
+            {error && <Notice>{error}</Notice>}
+            <button type="submit" disabled={loading} className="btn btn-signal w-full">
+              {loading ? <><Spinner /> Joining…</> : 'Get my ticket'}
+            </button>
+          </form>
+        </div>
+      </main>
+    </>
   );
 };
 

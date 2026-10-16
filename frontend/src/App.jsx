@@ -7,6 +7,7 @@ import Dashboard from "./components/Dashboard.jsx";
 import JoinPage from "./components/JoinPage.jsx";
 import AdminQueuePage from "./components/AdminQueuePage.jsx"
 import GuestQueuePage from "./components/GuestQueuePage.jsx"
+import NotFound from "./components/NotFound.jsx"
 const App = () =>  {
   return (
     <BrowserRouter>
@@ -19,6 +20,7 @@ const App = () =>  {
         <Route path="/join/:code" element={<JoinPage />} />
         <Route path="/queue/:id" element={<AdminQueuePage />} />
         <Route path="/guest/:queue_id" element={<GuestQueuePage />} />
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
   );
