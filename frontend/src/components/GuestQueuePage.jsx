@@ -1,5 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { AppHeader, ConfirmButton, FullPageMessage, QueueSkeleton, StatusBadge } from './ui.jsx';
+import { formatMinutes } from '../lib/format.js';
 
 const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
 const wsBase = baseUrl.startsWith('http')
@@ -12,9 +14,9 @@ const GuestQueuePage = () => {
   const [queueState, setQueueState] = useState(null);
   const [loading, setLoading] = useState(true);
   const [tokenExpired, setTokenExpired] = useState(false);
+  const [removed, setRemoved] = useState(false);
   const wsRef = useRef(null);
-  const isLeavingVoluntarily = useRef(false); // new flag
-
+  const isLeavingVoluntarily = useRef(false);
 
   // read once: the effect clears these on expiry and must not re-run (and redirect) when it does
   const [guestToken] = useState(() => localStorage.getItem('guest_token'));
@@ -40,17 +42,16 @@ const GuestQueuePage = () => {
       if (!data.entries) return;
       const myEntry = data.entries.find(e => e.id === myEntryId);
       // entries are soft-retained, so removal shows up as a status change, not a missing row
-      const removed = !myEntry || myEntry.status === 'skipped';
-      if (removed && !isLeavingVoluntarily.current) {
-        isLeavingVoluntarily.current = true; // only alert once
+      const wasRemoved = !myEntry || myEntry.status === 'skipped';
+      if (wasRemoved && !isLeavingVoluntarily.current) {
+        isLeavingVoluntarily.current = true; // only react once
         localStorage.removeItem('guest_token');
         localStorage.removeItem('guest_entry_id');
-        alert('You have been removed from the queue by the admin.');
-        navigate('/');
+        setRemoved(true);
         return;
       }
       setQueueState(data);
-    }
+    };
     ws.onclose = (event) => {
       if (event.code === 4003) {
         // token belongs to a different queue
@@ -71,7 +72,6 @@ const GuestQueuePage = () => {
   }, [queue_id, navigate, guestToken, myEntryId]);
 
   const handleLeave = async () => {
-    if (!confirm('Leave the queue?')) return;
     try {
       isLeavingVoluntarily.current = true; // mark before state changes
       await fetch(`${baseUrl}/queues/leave`, {
@@ -87,139 +87,150 @@ const GuestQueuePage = () => {
     }
   };
 
-  if (loading) return (
-    <div className="flex items-center justify-center h-screen bg-gray-50">
-      <div className="text-lg font-semibold text-gray-600">Loading...</div>
-    </div>
+  if (removed) return (
+    <FullPageMessage
+      title="You’ve been taken off the list"
+      body="Staff removed your spot, or skipped you when you were called. Ask at the counter if this looks wrong."
+      action={<Link to="/join" className="btn btn-primary">Join again</Link>}
+    />
   );
 
+  if (loading) return <><AppHeader /><QueueSkeleton /></>;
+
   if (tokenExpired) return (
-    <div className="flex items-center justify-center h-screen bg-gray-50">
-      <div className="bg-white rounded-lg shadow p-8 text-center max-w-sm">
-        <p className="text-gray-800 font-semibold mb-2">Your session expired</p>
-        <p className="text-gray-500 text-sm mb-4">Your spot was removed from the queue.</p>
-        <button onClick={() => navigate('/join')}
-          className="bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700">
-          Rejoin Queue
-        </button>
-      </div>
-    </div>
+    <FullPageMessage
+      title="Your ticket expired"
+      body="Your spot was released from the queue. You can join again with the same code."
+      action={<Link to="/join" className="btn btn-primary">Rejoin queue</Link>}
+    />
   );
+
   if (!queueState) return (
-    <div className="flex items-center justify-center h-screen bg-gray-50">
-      <div className="text-lg font-semibold text-gray-600">Could not load the queue.</div>
-    </div>
+    <FullPageMessage
+      title="We couldn’t load this queue"
+      body="Check your connection and refresh the page."
+      action={<button onClick={() => window.location.reload()} className="btn btn-primary">Refresh</button>}
+    />
   );
 
   const { queue, entries, stats } = queueState;
   const myEntry = entries.find(e => e.id === myEntryId);
-
+  const current = entries.find(e => e.status === 'called');
 
   const waitingAhead = entries.filter(
     e => e.status === 'waiting' && e.join_number < (myEntry?.join_number ?? Infinity)
   ).length;
   const estimatedWait = Math.round((waitingAhead * queue.avg_serve_time) / 60); // seconds to minutes
   const isCalled = myEntry?.status === 'called';
+  const active = entries.filter(e => e.status === 'waiting' || e.status === 'called');
 
   return (
-    <div className="min-h-screen bg-gray-100 p-8">
-      <div className="max-w-2xl mx-auto space-y-6">
+    <>
+      <AppHeader>
+        <ConfirmButton onConfirm={handleLeave} confirmLabel="Leave the line?" className="btn btn-danger btn-sm">
+          Leave queue
+        </ConfirmButton>
+      </AppHeader>
 
-        {/* Called banner */}
-        {isCalled && (
-          <div className="bg-blue-600 text-white rounded-lg p-5 text-center animate-pulse">
-            <p className="text-xl font-bold">🔔 You're being called!</p>
-            <p className="text-sm mt-1">Please proceed to the counter.</p>
+      <main className="mx-auto max-w-xl px-5 pb-24 pt-8 sm:pt-12">
+        <div className="flex items-center justify-between gap-4 animate-rise">
+          <div className="min-w-0">
+            <p className="eyebrow">You’re in line at</p>
+            <h1 className="mt-1 text-2xl font-semibold tracking-tight">{queue.name}</h1>
           </div>
-        )}
-
-        {/* Queue info */}
-        <div className="bg-white rounded-lg shadow p-6 flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800">{queue.name}</h1>
-            <p className="text-sm text-gray-500 mt-1">
-              {myEntry ? `Your ticket #${myEntry.join_number}` : 'You are no longer in the queue'}
-            </p>
-            {queue.description && (
-              <p className="text-sm text-gray-600 mt-2 border-t pt-2">{queue.description}</p>
-            )}
-          </div>
-          <button onClick={handleLeave}
-            className="text-red-600 hover:text-red-800 border border-red-300 hover:bg-red-50 text-sm font-medium py-1.5 px-3 rounded transition-colors">
-            Leave
-          </button>
+          <StatusBadge status={queue.status} />
         </div>
 
-        {/* My stats */}
-        {myEntry && (
-          <div className="grid grid-cols-2 gap-4">
-            <div className="bg-white rounded-lg shadow p-4 text-center">
-              <div className="text-3xl font-bold text-gray-800">{waitingAhead}</div>
-              <div className="text-sm text-gray-500">ahead of you</div>
+        {/* Ticket */}
+        <section
+          aria-live="polite"
+          className={`ticket mt-6 overflow-hidden animate-rise [animation-delay:60ms] ${isCalled ? '!border-signal ring-4 ring-signal/15' : ''}`}>
+          {isCalled ? (
+            <div className="bg-signal px-6 py-5 text-white sm:px-8">
+              <p className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.12em]">
+                <span className="h-2 w-2 rounded-full bg-white animate-blink" /> It’s your turn
+              </p>
+              <p className="mt-1 text-xl font-semibold tracking-tight">Head to the counter now.</p>
             </div>
-            <div className="bg-white rounded-lg shadow p-4 text-center">
-              <div className="text-3xl font-bold text-gray-800">{estimatedWait} min</div>
-              <div className="text-sm text-gray-500">est. wait</div>
-            </div>
+          ) : null}
+
+          <div className="px-6 pb-7 pt-6 sm:px-8">
+            <p className="eyebrow">Your number</p>
+            <p className="mt-2 font-mono text-[5.5rem] font-medium leading-none tracking-tight tabular-nums sm:text-8xl">
+              <span className="text-mute/50">Nº</span>{myEntry ? String(myEntry.join_number).padStart(3, '0') : '—'}
+            </p>
+            <p className="mt-3 font-medium">{myEntry?.display_name}</p>
           </div>
+
+          <div className="ticket-perf" />
+
+          {myEntry && !isCalled ? (
+            <dl className="grid grid-cols-3 divide-x divide-line/70">
+              <div className="px-4 py-5 sm:px-8">
+                <dt className="eyebrow">Ahead</dt>
+                <dd className="mt-1 font-mono text-2xl font-medium tabular-nums sm:text-3xl">{waitingAhead}</dd>
+              </div>
+              <div className="px-4 py-5 sm:px-8">
+                <dt className="eyebrow">Est. wait</dt>
+                <dd className="mt-1 font-mono text-2xl font-medium tabular-nums sm:text-3xl">
+                  {formatMinutes(estimatedWait)}<span className="ml-1 text-sm text-mute">min</span>
+                </dd>
+              </div>
+              <div className="px-4 py-5 sm:px-8">
+                <dt className="eyebrow">Serving</dt>
+                <dd className="mt-1 font-mono text-2xl font-medium tabular-nums sm:text-3xl">
+                  {current ? String(current.join_number).padStart(3, '0') : '—'}
+                </dd>
+              </div>
+            </dl>
+          ) : (
+            <p className="px-6 py-5 text-sm text-mute sm:px-8">
+              {isCalled ? 'Keep this page open. Staff can see you’ve been called.' : 'You are no longer in this queue.'}
+            </p>
+          )}
+        </section>
+
+        {queue.description && (
+          <p className="mt-6 rounded-[0.875rem] bg-paper-2 px-5 py-4 text-sm leading-relaxed text-ink-2">{queue.description}</p>
         )}
+
         {/* Live queue — everyone sees this */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-lg font-semibold text-gray-700 mb-4">
-            Live Queue <span className="text-sm font-normal text-gray-400">({stats.waiting_count} waiting)</span>
-          </h2>
-          {entries.length === 0 ? (
-            <p className="text-gray-500 text-center py-6 border-2 border-dashed border-gray-200 rounded-lg">
-              Queue is empty.
+        <section className="mt-12" aria-label="Live queue">
+          <div className="flex items-baseline justify-between">
+            <h2 className="text-lg font-semibold tracking-tight">The line</h2>
+            <p className="font-mono text-sm tabular-nums text-mute">{stats.waiting_count} waiting</p>
+          </div>
+          {active.length === 0 ? (
+            <p className="mt-4 rounded-[1.125rem] border border-dashed border-line-strong px-6 py-10 text-center text-sm text-mute">
+              No one is waiting.
             </p>
           ) : (
-            <ul className="space-y-2">
-              {entries.map((entry, index) => {
-                // how many 'waiting' entries are ahead of this one
-                const ahead = entries.filter(
-                  e => e.status === 'waiting' && e.join_number < entry.join_number
-                ).length;
-                const estCallAfter = Math.round((ahead * queue.avg_serve_time) / 60); // seconds → minutes
-
+            <ol className="mt-4 overflow-hidden rounded-[1.125rem] border border-line bg-card">
+              {active.map((entry) => {
+                const isMe = entry.id === myEntryId;
                 return (
                   <li key={entry.id}
-                    className={`flex items-center justify-between p-3 rounded-lg border
-                      ${entry.id === myEntryId         ? 'bg-yellow-50 border-yellow-300' :   // guest page only
-                        entry.status === 'called'      ? 'bg-blue-50 border-blue-300'    :
-                        'bg-white border-gray-200'}`}>
-
-                    <div className="flex items-center gap-3">
-                      <span className="text-gray-400 text-sm w-6">#{index + 1}</span>
-                      <div>
-                        <span className="font-medium text-gray-800">
-                          {/* guest page: append "(you)", admin page: just entry.display_name */}
-                          {entry.display_name}
-                        </span>
-                        {entry.status === 'waiting' && (
-                          <p className="text-xs text-gray-400">Est. call after: {estCallAfter} min</p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {/* Status badge — shown for all statuses */}
-                      <span className={`text-xs font-medium px-2 py-1 rounded-full
-                        ${entry.status === 'called'  ? 'bg-blue-100 text-blue-800'   :
-                          entry.status === 'waiting' ? 'bg-gray-100 text-gray-600'   :
-                          entry.status === 'served'  ? 'bg-green-100 text-green-700' :
-                          'bg-red-100 text-red-700'}`}>
-                        {entry.status.charAt(0).toUpperCase() + entry.status.slice(1)}
+                    className={`flex items-center justify-between gap-4 border-b border-line/70 px-5 py-3 last:border-b-0
+                      ${isMe ? 'bg-ink text-paper' : entry.status === 'called' ? 'bg-signal-soft/60' : ''}`}>
+                    <div className="flex min-w-0 items-center gap-4">
+                      <span className={`w-10 font-mono text-sm tabular-nums ${isMe ? 'text-paper/60' : 'text-mute'}`}>
+                        {String(entry.join_number).padStart(3, '0')}
+                      </span>
+                      <span className="truncate font-medium">
+                        {entry.display_name}{isMe && <span className="ml-2 font-mono text-xs text-paper/60">(you)</span>}
                       </span>
                     </div>
+                    {isMe && entry.status === 'waiting'
+                      ? <span className="font-mono text-xs uppercase tracking-wider text-paper/70">Waiting</span>
+                      : <StatusBadge status={entry.status} />}
                   </li>
                 );
               })}
-            </ul>
+            </ol>
           )}
-        </div>
-
-      </div>
-    </div>
+        </section>
+      </main>
+    </>
   );
 };
 

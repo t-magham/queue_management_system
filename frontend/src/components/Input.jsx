@@ -1,20 +1,20 @@
+import { useId } from 'react';
 
-export default function Input({ label, type, placeholder, value, onChange, error }) {
+export default function Input({ label, error, hint, ...props }) {
+  const id = useId();
   return (
-    <div className="flex flex-col space-y-1.5">
-      <label className="text-sm font-medium text-neutral-700">{label}</label>
+    <div>
+      <label htmlFor={id} className="label">{label}</label>
       <input
-        type={type}
-        className={`w-full px-3 py-2 border rounded-md text-sm outline-none transition-all
-          ${error 
-            ? 'border-red-500 focus:ring-1 focus:ring-red-500' 
-            : 'border-neutral-200 focus:border-neutral-900 focus:ring-1 focus:ring-neutral-900'
-          } placeholder-neutral-400`}
-        placeholder={placeholder}
-        value={value}
-        onChange={onChange}
+        id={id}
+        className="field"
+        aria-invalid={error ? 'true' : undefined}
+        aria-describedby={error ? `${id}-error` : undefined}
+        {...props}
       />
-      {error && <span className="text-xs text-red-500">{error}</span>}
+      {error
+        ? <p id={`${id}-error`} className="mt-1.5 text-[0.8125rem] text-stop">{error}</p>
+        : hint && <p className="mt-1.5 text-[0.8125rem] text-mute">{hint}</p>}
     </div>
   );
 }
